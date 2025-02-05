@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Chromium 下载</title>
+</head>
+<body>
+    <div id="status">正在检测系统并准备下载链接...</div>
+    <div id="manual" style="display: none;">
+        <h3>自动识别失败，请手动选择：</h3>
+        <ul id="links"></ul>
+    </div>
+
+    <script>
+        // 平台配置（精简版）
+        const platformConfig = {
+            'Android': { file: 'chrome-android.zip', match: /Android/i },
+            'Linux': { file: 'chrome-linux.zip', match: /Linux/i },
+            'Mac': { file: 'chrome-mac.zip', match: /Macintosh|Mac OS X/i },
+            'Win': { file: 'mini_installer.exe', match: /Windows/i }
+        };
+
+        async function loadVersions() {
+            try {
+                const files = Object.keys(platformConfig).map(p => `${p}-last-change.txt`);
+                const responses = await Promise.all(files.map(file => fetch(`./${file}`).then(r => r.text())));
+                
+                const versions = {};
+                files.forEach((file, index) => {
+                    const platform = file.replace('-last-change.txt', '');
+                    versions[platform] = responses[index].trim();
+                });
+                return versions;
+            } catch (error) {
+                throw new Error('获取版本失败');
+            }
+        }
+
+        function detectPlatform(ua) {
+            for (const [platform, config] of Object.entries(platformConfig)) {
+                if (config.match.test(ua)) {
+                    return { platform, file: config.file };
+                }
+            }
+            return null;
+        }
+
+        // 主逻辑
+        loadVersions()
+            .then(versions => {
+                const detected = detectPlatform(navigator.userAgent);
+                if (detected && versions[detected.platform]) {
+                    window.location.href = `https://storage.googleapis.com/chromium-browser-snapshots/${detected.platform}/${versions[detected.platform]}/${detected.file}`;
+                } else {
+                    document.getElementById('status').style.display = 'none';
+                    document.getElementById('manual').style.display = 'block';
+                    const list = document.getElementById('links');
+                    Object.entries(versions).forEach(([platform, version]) => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `<a href="https://storage.googleapis.com/chromium-browser-snapshots/${platform}/${version}/${platformConfig[platform].file}">${platform}</a>`;
+                        list.appendChild(li);
+                    });
+                }
+            })
+            .catch(error => {
+                document.getElementById('status').textContent = error.message;
+            });
+    </script>
+</body>
+</html>
