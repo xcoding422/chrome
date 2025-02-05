@@ -1,0 +1,65 @@
+name: Update Chromium Versions
+
+on:
+  schedule:
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      # 步骤1：拉取完整代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      # 步骤2：清理残留文件
+      - name: Clean workspace
+        run: |
+          rm -rf public/*-last-change.txt
+          git reset --hard HEAD
+          git clean -fd
+
+      # 步骤3：同步远程最新代码
+      - name: Pull latest changes
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git pull origin main --rebase
+
+      # 步骤4：生成新版本文件（保存到 public/ 目录）
+      - name: Fetch All LAST_CHANGE
+        run: |
+          mkdir -p public  # 确保 public 目录存在
+          platforms=(
+            "Android" "Android_Arm64" "AndroidDesktop_arm64" "AndroidDesktop_x64"
+            "Linux" "Linux_x64" "Mac" "Mac_Arm" "Win" "Win_Arm64" "Win_x64"
+          )
+          for platform in "${platforms[@]}"; do
+            sanitized_name=$(echo "$platform" | tr '/' '_')
+            curl -s "https://storage.googleapis.com/chromium-browser-snapshots/${platform}/LAST_CHANGE" -o "./public/${sanitized_name}-last-change.txt"
+          done
+
+      # 步骤5：提交并推送（仅提交 public/ 目录）
+      - name: Commit and Deploy
+        run: |
+          git add public/
+          if git diff-index --quiet HEAD --; then
+            echo "没有更改需要提交"
+          else
+            git commit -m "Auto-update Chromium versions"
+            git push "https://${{ github.actor}}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main
+          fi
+
+      # 步骤6：部署到 GitHub Pages（仅发布 public/ 目录）
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public  # 仅发布 public/ 目录
+          publish_branch: main
+          keep_files: true  # 保留现有文件
